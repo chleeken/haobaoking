@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 import shutil
-from datetime import datetime
 
 FONT = ("宋体", 18)
 ENCODING = "utf-8"
@@ -18,7 +17,7 @@ class StockSortTool(tk.Tk):
         self.current_file = None
         self.stock_items = []  # 列表元素：(原始字符串, 纯数字)
         self.sorted_items = []
-
+        
         self._init_ui()
 
     def _init_ui(self):
@@ -153,9 +152,6 @@ class StockSortTool(tk.Tk):
         if not path:
             return
 
-        # 备份文件
-        bak_path = self._backup(path)
-        
         try:
             with open(path, "r", encoding=ENCODING) as f:
                 lines = [line.rstrip('\n') for line in f if line.strip()]
@@ -178,29 +174,47 @@ class StockSortTool(tk.Tk):
             self.sorted_items = []
             
             # 显示成功消息
-            msg = f"文件打开成功"
-            if bak_path:
-                msg += f"，已备份为：{os.path.basename(bak_path)}"
+            msg = f"文件打开成功，共{len(self.stock_items)}条记录"
             self._auto_msg(msg)
             
         except Exception as e:
             messagebox.showerror("错误", f"打开失败：{str(e)}")
 
     def do_sort(self):
-        """排序功能：按照 000001 → 300001 → 600001 的顺序"""
+        """排序功能：按照 000001 → 300001 → 600001 的顺序，自动保存"""
         if not self.stock_items:
             messagebox.showwarning("提示", "请先打开文件")
             return
-        
+
         # 排序：按数字从小到大
         self.sorted_items = sorted(self.stock_items, key=lambda x: (x[1], x[0]))
-        
+
         # 显示排序结果
         show_text = "\n".join([item[0] for item in self.sorted_items])
         self.txt_sorted.delete(1.0, tk.END)
         self.txt_sorted.insert(tk.END, show_text)
-        
-        self._auto_msg("排序完成")
+
+        # 自动保存
+        if self.current_file:
+            bak_path = self._backup(self.current_file)
+            try:
+                with open(self.current_file, "w", encoding=ENCODING) as f:
+                    for item in self.sorted_items:
+                        f.write(item[0] + "\n")
+                
+                # 更新原始显示区域
+                self.stock_items = self.sorted_items.copy()
+                self.txt_original.delete(1.0, tk.END)
+                self.txt_original.insert(tk.END, show_text)
+                
+                msg = "排序并保存成功"
+                if bak_path:
+                    msg += f"，已备份：{os.path.basename(bak_path)}"
+                self._auto_msg(msg)
+            except Exception as e:
+                messagebox.showerror("错误", f"保存失败：{str(e)}")
+        else:
+            self._auto_msg("排序完成")
         
     def convert_and_save(self):
         """转化并保存到原文件"""
@@ -269,14 +283,20 @@ class StockSortTool(tk.Tk):
             return
         
         new_items = []
+        prefix_count = 0
         for raw, num in self.stock_items:
             new_raw = self._add_prefix_one(raw)
             # 重新解析，更新数字部分
             new_parsed = self._parse_line(new_raw)
             if new_parsed:
                 new_items.append(new_parsed)
+                if new_raw != raw:
+                    prefix_count += 1
         
         if new_items:
+            # 备份原文件
+            bak_path = self._backup(self.current_file) if self.current_file else None
+            
             self.stock_items = new_items
             self.txt_original.delete(1.0, tk.END)
             self.txt_original.insert(tk.END, "\n".join([item[0] for item in self.stock_items]))
@@ -285,7 +305,10 @@ class StockSortTool(tk.Tk):
             self.txt_sorted.delete(1.0, tk.END)
             self.sorted_items = []
             
-            self._auto_msg("已自动添加前缀")
+            msg = f"已自动添加前缀，共{prefix_count}条"
+            if bak_path:
+                msg += f"，已备份：{os.path.basename(bak_path)}"
+            self._auto_msg(msg)
 
     def _del_prefix_one(self, s):
         """为单个代码去除前缀"""
@@ -304,14 +327,20 @@ class StockSortTool(tk.Tk):
             return
         
         new_items = []
+        prefix_count = 0
         for raw, num in self.stock_items:
             new_raw = self._del_prefix_one(raw)
             # 重新解析，更新数字部分
             new_parsed = self._parse_line(new_raw)
             if new_parsed:
                 new_items.append(new_parsed)
+                if new_raw != raw:
+                    prefix_count += 1
         
         if new_items:
+            # 备份原文件
+            bak_path = self._backup(self.current_file) if self.current_file else None
+            
             self.stock_items = new_items
             self.txt_original.delete(1.0, tk.END)
             self.txt_original.insert(tk.END, "\n".join([item[0] for item in self.stock_items]))
@@ -320,7 +349,10 @@ class StockSortTool(tk.Tk):
             self.txt_sorted.delete(1.0, tk.END)
             self.sorted_items = []
             
-            self._auto_msg("已去除所有前缀")
+            msg = f"已去除所有前缀，共{prefix_count}条"
+            if bak_path:
+                msg += f"，已备份：{os.path.basename(bak_path)}"
+            self._auto_msg(msg)
 
     def save_result(self):
         """保存排序结果"""
@@ -337,11 +369,20 @@ class StockSortTool(tk.Tk):
         if not path:
             return
         
+        # 备份目标文件（如果已存在）
+        bak_path = None
+        if os.path.exists(path):
+            bak_path = self._backup(path)
+        
         try:
             with open(path, "w", encoding=ENCODING) as f:
                 for item in self.sorted_items:
                     f.write(item[0] + "\n")
-            self._auto_msg("保存成功")
+            
+            msg = "保存成功"
+            if bak_path:
+                msg += f"，已备份原文件：{os.path.basename(bak_path)}"
+            self._auto_msg(msg)
         except Exception as e:
             messagebox.showerror("错误", f"保存失败：{str(e)}")
 
